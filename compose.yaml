@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: agencyos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agencyos_local}
+      POSTGRES_DB: agencyos
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - agencyos_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agencyos -d agencyos"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  agencyos_postgres:

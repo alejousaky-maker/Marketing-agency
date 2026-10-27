@@ -1,0 +1,65 @@
+# Local-only, credential-free demo. Do not use this file for public hosting.
+name: agencyos-demo
+x-app: &app
+  image: agencyos:local-demo
+  build: .
+  environment:
+    NODE_ENV: production
+    DATABASE_URL: postgresql://agencyos:local-demo-only@postgres:5432/agencyos
+    APP_URL: http://localhost:${AGENCYOS_PORT:-3000}
+    DEMO_MODE: "true"
+    DEMO_EMAIL: demo@agencyos.local
+    STORAGE_DRIVER: local
+    STORAGE_PATH: /app/.data/storage
+  volumes:
+    - media:/app/.data
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: agencyos
+      POSTGRES_PASSWORD: local-demo-only
+      POSTGRES_DB: agencyos
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agencyos -d agencyos"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+  initialize:
+    <<: *app
+    command: ["node", "scripts/docker-demo-setup.mjs"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+  web:
+    <<: *app
+    ports:
+      - "127.0.0.1:${AGENCYOS_PORT:-3000}:3000"
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  worker:
+    <<: *app
+    command: ["npm", "run", "worker"]
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 1.5
+    pids_limit: 96
+volumes:
+  postgres:
+  media:

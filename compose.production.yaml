@@ -1,0 +1,54 @@
+# Supply .env.production and matching DATABASE_URL before running.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: agencyos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a strong database password}
+      POSTGRES_DB: agencyos
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agencyos -d agencyos"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  web:
+    build: .
+    image: agencyos:v1
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      DEMO_MODE: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - media:/app/.data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+  worker:
+    image: agencyos:v1
+    command: ["npm", "run", "worker"]
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      DEMO_MODE: "false"
+    volumes:
+      - media:/app/.data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 1.5
+    pids_limit: 96
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+volumes:
+  postgres:
+  media:

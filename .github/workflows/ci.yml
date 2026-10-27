@@ -1,0 +1,50 @@
+name: V1 validation
+on: [push, pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: agencyos
+          POSTGRES_PASSWORD: ci-only-local-password
+          POSTGRES_DB: agencyos
+        ports: ["54329:5432"]
+        options: --health-cmd "pg_isready -U agencyos" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://agencyos:ci-only-local-password@localhost:54329/agencyos
+      APP_URL: http://localhost:3000
+      DEMO_MODE: "true"
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg tesseract-ocr
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: |
+          cp .env.example .env
+          node --input-type=module -e "import fs from 'node:fs'; import {randomBytes} from 'node:crypto'; fs.appendFileSync('.env','\\nDEMO_PASSWORD='+randomBytes(24).toString('hex')+'\\n');"
+          npm run db:migrate
+          npm run db:seed
+      - run: npm run check
+      - run: npm run build
+      - run: |
+          npm start > /tmp/agencyos-web.log 2>&1 &
+          npm run worker > /tmp/agencyos-worker.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://localhost:3000/api/health && break; sleep 1; done
+          npm run test:integration
+          npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: failure-details
+          path: |
+            test-results/
+            playwright-report/
+            /tmp/agencyos-web.log
+            /tmp/agencyos-worker.log
